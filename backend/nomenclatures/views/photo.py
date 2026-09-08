@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
 
 from api.constants import get_instance_or_404
+from api.mixins import SignedMediaNoCacheMixin
 from users.permissions import StaffCUDallRead
 from ..models import Nomenclature, NomenclatureImage
 from ..serializers import PhotoSerializer
@@ -12,7 +13,7 @@ from rest_framework.status import HTTP_200_OK, HTTP_201_CREATED
 
 
 @extend_schema(tags=["Фотографии номенклатур", "Номенклатуры"])
-class NomenclaturePhotoViewSet(viewsets.ModelViewSet):
+class NomenclaturePhotoViewSet(SignedMediaNoCacheMixin, viewsets.ModelViewSet):
     """
     ViewSet для управления фотографиями номенклатур.
 
@@ -148,7 +149,9 @@ class NomenclaturePhotoViewSet(viewsets.ModelViewSet):
             - Фотографии можно удалять отдельно через DELETE
             - Типы фото помогают организовать изображения по назначению
         """
-        nomenclature = get_instance_or_404(Nomenclature, pk=pk)
+        # Use the unfiltered manager so staff can attach photos to archived
+        # nomenclatures as well as active ones.
+        nomenclature = get_instance_or_404(Nomenclature.objects, pk=pk)
 
         serializer = PhotoSerializer(
             data=request.data,
@@ -279,7 +282,8 @@ class NomenclaturePhotoViewSet(viewsets.ModelViewSet):
             - Может не содержать фотографий, если ни одна не загружена
             - Фотографии упорядочены по дате создания (новые первыми)
         """
-        nomenclature = get_instance_or_404(Nomenclature, pk)
+        # Archived nomenclatures must keep their photo gallery manageable.
+        nomenclature = get_instance_or_404(Nomenclature.objects, pk)
         photos = nomenclature.images.all()
         serializer = PhotoSerializer(photos, many=True)
         return Response(serializer.data, status=HTTP_200_OK)

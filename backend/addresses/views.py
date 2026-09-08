@@ -41,7 +41,10 @@ from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from drf_spectacular.utils import extend_schema
 from django.shortcuts import get_object_or_404
+from django.conf import settings
 from django.db.models import Count, Q
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
 from nomenclatures.models import Nomenclature
 from .models import (
     Country, FederalDistrict, TypeRegion, Timezone, Region,
@@ -357,9 +360,7 @@ class LocalityTypeViewSet(viewsets.ModelViewSet):
 )
 class CityViewSet(viewsets.ModelViewSet):
     """VIEWSET ДЛЯ УПРАВЛЕНИЯ ГОРОДАМИ."""
-    queryset = City.objects.all().select_related(
-        'region', 'locality_type', 'timezone'
-    ).order_by('region__name', 'name')
+    queryset = City.objects.all()
     permission_classes = [IsAuthenticatedOrReadOnly]
     serializer_class = CitySerializer
     pagination_class = OptionalPagination
@@ -373,37 +374,52 @@ class CityViewSet(viewsets.ModelViewSet):
         Возвращает города с номенклатурами и их количеством.
         """
         # Получаем ID городов с номенклатурами для веба
-        city_ids = Nomenclature.objects.filter(
-            for_web=True,
-        ).exclude(
-            address__isnull=True
-        ).exclude(
-            address__address__isnull=True
-        ).exclude(
-            address__address__city__isnull=True
-        ).values_list(
-            'address__address__city_id',
-            flat=True
-        ).distinct()
+        nomenclature_filter = Q(
+            address__nomenclatureaddress__nomenclature__for_web=True,
+            address__nomenclatureaddress__nomenclature__is_active=True,
+        )
+
+        type_of_place = self.request.query_params.get('type_of_place', '').strip()
+        if type_of_place:
+            nomenclature_filter &= Q(
+                address__nomenclatureaddress__nomenclature__typeOfPlace__name__icontains=type_of_place
+            )
 
         return (
-            City.objects.filter(id__in=city_ids)
-            .select_related('region', 'locality_type', 'timezone')
+            City.objects.all()
             .annotate(
                 nomenclature_count=Count(
                     'address__nomenclatureaddress__nomenclature',
-                    filter=Q(
-                        address__nomenclatureaddress__nomenclature__for_web=True
-                    ),
+                    filter=nomenclature_filter,
                     distinct=True
                 )
             )
+            .filter(nomenclature_count__gt=0)
         )
 
+    @method_decorator(cache_page(settings.CACHE_TTL))
     @city_list_schema()
     def list(self, request, *args, **kwargs):
         """Список городов с количеством номенклатур."""
         queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @extend_schema(
+        tags=["Города"],
+        description="Десять городов с наибольшим количеством активных номенклатур для веба.",
+        responses=CitySerializer(many=True),
+    )
+    @action(
+        detail=False,
+        methods=['get'],
+        url_path='popular',
+        url_name='popular',
+    )
+    @method_decorator(cache_page(settings.CACHE_TTL))
+    def cities_popular(self, request):
+        """Десять городов с наибольшим количеством номенклатур."""
+        queryset = self.get_queryset().order_by('-nomenclature_count', 'name')[:10]
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 

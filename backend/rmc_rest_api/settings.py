@@ -84,7 +84,7 @@ EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', 'false').lower() == 'true'
 
 if DEBUG or os.environ.get('DISABLE_EMAIL_SSL_VERIFY', 'true').lower() == 'true':
     EMAIL_BACKEND = 'feedback.email_backend.CustomEmailBackend'
-    print("⚠️  Using email backend without SSL verification")
+    print("Using email backend without SSL verification")
 else:
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 
@@ -152,6 +152,9 @@ DATABASES = {
 }
 
 CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST')
+CLICKHOUSE_STATISTICS_TABLE_SUFFIX = os.environ.get(
+    'CLICKHOUSE_STATISTICS_TABLE_SUFFIX', ''
+)
 if CLICKHOUSE_HOST:
     DATABASES['clickhouse'] = {
         'ENGINE': 'clickhouse_backend.backend',
@@ -283,6 +286,9 @@ MINIO_USE_HTTPS = os.environ.get('MINIO_HTTPS', 'false').lower() == 'true'
 MINIO_EXTERNAL_ENDPOINT = os.environ.get('MINIO_EXTERNAL_ENDPOINT')
 MINIO_EXTERNAL_ENDPOINT_USE_HTTPS = os.environ.get('MINIO_EXTERNAL_HTTPS', 'true').lower() == 'true'
 MINIO_REGION = os.environ.get('MINIO_REGION', 'us-east-1')
+# django-minio-backend reads this flag from Django settings when deciding
+# whether storage.url() may reuse a previously generated presigned URL.
+MINIO_URL_CACHING_ENABLED = False
 
 MINIO_PUBLIC_BUCKETS = ['local-static', 'builds']
 MINIO_PRIVATE_BUCKETS = ['local-media']
@@ -301,6 +307,9 @@ STORAGES = {
             'MINIO_PRIVATE_BUCKETS': MINIO_PRIVATE_BUCKETS,
             'MINIO_PUBLIC_BUCKETS': MINIO_PUBLIC_BUCKETS,
             'MINIO_URL_EXPIRY_HOURS': timedelta(days=1),
+            # API responses contain presigned URLs. They must be generated for
+            # the current request, not reused from Django/Redis URL cache.
+            'MINIO_URL_CACHING_ENABLED': False,
             'MINIO_CONSISTENCY_CHECK_ON_START': False,
         }
     },
@@ -583,7 +592,7 @@ LOGGING = {
 # if DEBUG or os.environ.get('DISABLE_EMAIL_SSL_VERIFY', 'true').lower() == 'true':
 #     # Используем кастомный бэкенд с отключенной проверкой SSL
 #     EMAIL_BACKEND = 'feedback.email_backend.CustomEmailBackend'
-#     print("⚠️  Using email backend without SSL verification")
+#     print("Using email backend without SSL verification")
 # else:
 #     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 
@@ -919,14 +928,14 @@ LOGGING = {
 #     with open(test_file, 'w') as f:
 #         f.write('test')
 #     os.remove(test_file)
-#     print(f"✅ LOG_DIR is writable: {LOG_DIR}")
+#     print(f"LOG_DIR is writable: {LOG_DIR}")
 # except Exception as e:
-#     print(f"❌ Cannot write to LOG_DIR: {LOG_DIR}")
+#     print(f"Cannot write to LOG_DIR: {LOG_DIR}")
 #     print(f"Error: {e}")
 #     # Fallback - используем /tmp если не можем писать в LOG_DIR
 #     LOG_DIR = '/tmp'
 #     os.makedirs(LOG_DIR, exist_ok=True)
-#     print(f"⚠️ Using fallback LOG_DIR: {LOG_DIR}")
+#     print(f"Using fallback LOG_DIR: {LOG_DIR}")
 
 # LOGGING = {
 #     'version': 1,
@@ -966,7 +975,7 @@ LOGGING = {
 #             'class': 'logging.FileHandler',
 #             'filename': BASE_DIR / 'logs' / 'api_1c.log',
 #         },
-#         # 🔴 НОВЫЙ HANDLER ДЛЯ OPENSEARCH
+#         # Новый handler для OpenSearch
 #         'opensearch_file': {
 #             'class': 'logging.handlers.RotatingFileHandler',
 #             'filename': os.path.join(LOG_DIR, 'opensearch.log'),
@@ -990,7 +999,7 @@ LOGGING = {
 #             'handlers': ['file', 'console'],
 #             'level': 'INFO',
 #         },
-#         # 🔴 НОВЫЙ LOGGER ДЛЯ OPENSEARCH
+#         # Новый logger для OpenSearch
 #         'nomenclatures.services.opensearch_search': {
 #             'handlers': ['opensearch_file', 'console'],
 #             'level': 'DEBUG',
